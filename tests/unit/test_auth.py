@@ -12,10 +12,8 @@ from app.utils.auth import (
     decode_token,
 )
 
-# Test data
 TEST_USERNAME = "testuser"
 TEST_PASSWORD = "testpassword123"
-# Generate a consistent salt for testing
 TEST_SALT = bcrypt.gensalt()
 TEST_HASHED_PASSWORD = bcrypt.hashpw(TEST_PASSWORD.encode("utf-8"), TEST_SALT).decode(
     "utf-8"
@@ -29,17 +27,6 @@ def auth_env_vars(monkeypatch):
     monkeypatch.setenv("ALGORITHM", "HS256")
     monkeypatch.setenv("HASHED", TEST_HASHED_PASSWORD)
     monkeypatch.setenv("USERNAME", TEST_USERNAME)
-
-
-class TestEnvVars:
-    """Tests for environment variables."""
-
-    def test_env_vars(self):
-        """Test environment variables."""
-        assert os.getenv("SECRET_KEY") == "test_secret_key"
-        assert os.getenv("ALGORITHM") == "HS256"
-        assert os.getenv("HASHED") == TEST_HASHED_PASSWORD
-        assert os.getenv("USERNAME") == TEST_USERNAME
 
 
 class TestAuthenticate:
@@ -73,19 +60,15 @@ class TestCreateAccessToken:
         test_username = "testuser"
         create_access_token(test_username)
 
-        # Check that encode was called
         assert mock_encode.called
 
-        # Get the arguments passed to encode
-        args, kwargs = mock_encode.call_args
+        _, kwargs = mock_encode.call_args
 
-        # Check the payload
-        payload = args[0]
+        payload = kwargs["claims"]
         assert payload["sub"] == test_username
         assert "exp" in payload
 
-        # Check the key and algorithm
-        assert args[1] == os.getenv("SECRET_KEY")
+        assert kwargs["key"] == os.getenv("SECRET_KEY")
         assert kwargs["algorithm"] == os.getenv("ALGORITHM")
 
 
@@ -94,13 +77,9 @@ class TestDecodeToken:
 
     def test_decode_token_success(self):
         """Test successful token decoding."""
-        # Create a valid token
         token = create_access_token(TEST_USERNAME)
-
-        # Decode the token
         payload = decode_token(token)
 
-        # Verify the payload
         assert payload is not None
         assert payload["sub"] == TEST_USERNAME
         assert "exp" in payload
@@ -116,30 +95,21 @@ class TestDecodeToken:
             "wrong_secret_key",
             algorithm=algorithm,
         )
-
         payload = decode_token(invalid_token)
-
-        # Should return None for invalid tokens
         assert payload is None
 
     @patch("app.utils.auth.jwt.decode")
     def test_decode_token_jwterror_handling(self, mock_decode, caplog):
         """Test that JWTError is properly handled and logged."""
-        # Configure the mock to raise JWTError
+
         mock_decode.side_effect = JWTError("Test error")
-
-        # Call with any token
-        result = decode_token("any.token.here")
-
-        # Should return None on error
+        result = decode_token("mocked.error.token")
         assert result is None
 
-        # Should log the error
         assert "Failed to decode token" in caplog.text
 
     def test_decode_token_expired(self):
         """Test decoding an expired token."""
-        # Create an expired token
         expired_payload = {
             "sub": TEST_USERNAME,
             "exp": datetime.now(timezone.utc) - timedelta(minutes=5),
@@ -147,9 +117,5 @@ class TestDecodeToken:
         secret_key = os.getenv("SECRET_KEY")
         algorithm = os.getenv("ALGORITHM")
         expired_token = jwt.encode(expired_payload, secret_key, algorithm)
-
-        # Try to decode the expired token
         payload = decode_token(expired_token)
-
-        # Should return None for expired tokens
         assert payload is None

@@ -30,7 +30,7 @@ def create_access_token(username: str) -> str:
     algorithm = os.getenv("ALGORITHM")
     expire = datetime.now(timezone.utc) + timedelta(minutes=30)
     data = {"sub": username, "exp": expire}
-    encoded_jwt = jwt.encode(data, secret_key, algorithm=algorithm)
+    encoded_jwt = jwt.encode(claims=data, key=secret_key, algorithm=algorithm)
     return encoded_jwt
 
 
@@ -40,7 +40,7 @@ def decode_token(token: str) -> dict:
     algorithm = os.getenv("ALGORITHM")
     try:
         logger.info("Decoding token")
-        payload = jwt.decode(token, secret_key, algorithms=algorithm)
+        payload = jwt.decode(token=token, key=secret_key, algorithms=algorithm)
         return payload
     except JWTError as e:
         logger.error("Failed to decode token: %s", str(e))
