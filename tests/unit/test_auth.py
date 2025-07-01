@@ -1,9 +1,10 @@
 import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+
+import bcrypt
 import pytest
 from jose import JWTError, jwt
-import bcrypt
 
 from app.utils.auth import (
     authenticate,
@@ -16,7 +17,10 @@ TEST_USERNAME = "testuser"
 TEST_PASSWORD = "testpassword123"
 # Generate a consistent salt for testing
 TEST_SALT = bcrypt.gensalt()
-TEST_HASHED_PASSWORD = bcrypt.hashpw(TEST_PASSWORD.encode('utf-8'), TEST_SALT).decode('utf-8')
+TEST_HASHED_PASSWORD = bcrypt.hashpw(TEST_PASSWORD.encode("utf-8"), TEST_SALT).decode(
+    "utf-8"
+)
+
 
 @pytest.fixture(autouse=True)
 def auth_env_vars(monkeypatch):
@@ -26,8 +30,10 @@ def auth_env_vars(monkeypatch):
     monkeypatch.setenv("HASHED", TEST_HASHED_PASSWORD)
     monkeypatch.setenv("USERNAME", TEST_USERNAME)
 
+
 class TestEnvVars:
     """Tests for environment variables."""
+
     def test_env_vars(self):
         """Test environment variables."""
         assert os.getenv("SECRET_KEY") == "test_secret_key"
@@ -61,23 +67,23 @@ class TestCreateAccessToken:
         assert isinstance(token, str)
         assert len(token) > 0
 
-    @patch('app.utils.auth.jwt.encode')
+    @patch("app.utils.auth.jwt.encode")
     def test_create_access_token_calls_encode(self, mock_encode):
         """Test that jwt.encode is called with correct parameters."""
         test_username = "testuser"
         create_access_token(test_username)
-        
+
         # Check that encode was called
         assert mock_encode.called
-        
+
         # Get the arguments passed to encode
         args, kwargs = mock_encode.call_args
-        
+
         # Check the payload
         payload = args[0]
         assert payload["sub"] == test_username
         assert "exp" in payload
-        
+
         # Check the key and algorithm
         assert args[1] == os.getenv("SECRET_KEY")
         assert kwargs["algorithm"] == os.getenv("ALGORITHM")
@@ -85,7 +91,7 @@ class TestCreateAccessToken:
 
 class TestDecodeToken:
     """Tests for the decode_token function."""
-    
+
     def test_decode_token_success(self):
         """Test successful token decoding."""
         # Create a valid token
@@ -103,28 +109,31 @@ class TestDecodeToken:
         """Test decoding an invalid token."""
         algorithm = os.getenv("ALGORITHM")
         invalid_token = jwt.encode(
-            {"sub": TEST_USERNAME, "exp": datetime.now(timezone.utc) + timedelta(minutes=30)},
+            {
+                "sub": TEST_USERNAME,
+                "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
+            },
             "wrong_secret_key",
-            algorithm=algorithm
+            algorithm=algorithm,
         )
 
         payload = decode_token(invalid_token)
 
         # Should return None for invalid tokens
         assert payload is None
-    
-    @patch('app.utils.auth.jwt.decode')
+
+    @patch("app.utils.auth.jwt.decode")
     def test_decode_token_jwterror_handling(self, mock_decode, caplog):
         """Test that JWTError is properly handled and logged."""
         # Configure the mock to raise JWTError
         mock_decode.side_effect = JWTError("Test error")
-        
+
         # Call with any token
         result = decode_token("any.token.here")
-        
+
         # Should return None on error
         assert result is None
-        
+
         # Should log the error
         assert "Failed to decode token" in caplog.text
 
@@ -133,14 +142,14 @@ class TestDecodeToken:
         # Create an expired token
         expired_payload = {
             "sub": TEST_USERNAME,
-            "exp": datetime.now(timezone.utc) - timedelta(minutes=5)
+            "exp": datetime.now(timezone.utc) - timedelta(minutes=5),
         }
         secret_key = os.getenv("SECRET_KEY")
         algorithm = os.getenv("ALGORITHM")
         expired_token = jwt.encode(expired_payload, secret_key, algorithm)
-        
+
         # Try to decode the expired token
         payload = decode_token(expired_token)
-        
+
         # Should return None for expired tokens
         assert payload is None

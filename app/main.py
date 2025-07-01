@@ -9,19 +9,24 @@ from .models.schemas import GenerateRequest, GenerateResponse, Token
 from .rag.loader import init_vectorstore
 from .rag.rag_pipeline import RAGPipeline
 from .rag.settings import LLM_MODEL, TEMPERATURE
-from .utils.auth import (authenticate, create_access_token)
+from .utils.auth import authenticate, create_access_token
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize the RAG pipeline."""
     vectorstore = init_vectorstore()
-    app.state.rag_pipeline = RAGPipeline(model_name=LLM_MODEL, temperature=TEMPERATURE, vectorstore=vectorstore)
+    app.state.rag_pipeline = RAGPipeline(
+        model_name=LLM_MODEL, temperature=TEMPERATURE, vectorstore=vectorstore
+    )
     yield
 
+
 app = FastAPI(lifespan=lifespan)
+
 
 @app.get("/")
 def read_root():
@@ -43,13 +48,10 @@ async def get_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
 
 
 @app.post("/generate", response_model=GenerateResponse)
-async def generate_answer(
-    request: Request,
-    body: GenerateRequest
-) -> Dict[str, Any]:
+async def generate_answer(request: Request, body: GenerateRequest) -> Dict[str, Any]:
     """
     Generate an answer to a question using the RAG pipeline.
-    
+
     Args:
         body: The request containing the question
     Returns:
@@ -61,17 +63,14 @@ async def generate_answer(
         logger.info("Generating RAG answer")
 
         response = rag_pipeline.get_answer(question=body.question)
-        
+
         return {
             "status": "success",
             "message": "Answer generated successfully",
             "answer": response["answer"],
             # TODO: Delete after testing
             "sources": [
-                {
-                    "content": src["content"],
-                    "metadata": src["metadata"]
-                }
+                {"content": src["content"], "metadata": src["metadata"]}
                 for src in response["sources"]
             ],
         }
