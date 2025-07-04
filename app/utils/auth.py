@@ -4,14 +4,19 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from dotenv import load_dotenv
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, status
+from fastapi.security import (
+    HTTPAuthorizationCredentials,
+    HTTPBearer,
+    OAuth2PasswordBearer,
+)
 from jose import JWTError, jwt
 
-load_dotenv()
+if os.getenv("ENV", "development") == "development":
+    load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
@@ -45,3 +50,18 @@ def decode_token(token: str) -> dict:
     except JWTError as e:
         logger.error("Failed to decode token: %s", str(e))
         return None
+
+
+security = HTTPBearer()
+
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+    """Verify a JWT token."""
+    payload = decode_token(credentials.credentials)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return payload
