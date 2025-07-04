@@ -1,17 +1,13 @@
-import os
-from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
-from langchain.chains.question_answering import load_qa_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains.history_aware_retriever import create_history_aware_retriever
+from langchain.chains.retrieval import create_retrieval_chain
 from langchain.prompts import PromptTemplate
 from langchain_community.vectorstores import Chroma
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from .settings import LLM_MODEL, TEMPERATURE
-
-# Get the base directory
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATABASE_DIR = os.path.join(BASE_DIR, "chroma_db")
+from .settings import EMBEDDINGS_MODEL, LLM_MODEL, TEMPERATURE
 
 
 class RAGPipeline:
@@ -28,21 +24,42 @@ class RAGPipeline:
             model_name: Name of the OpenAI model to use
             temperature: Temperature parameter for the LLM
         """
-        self.model_name = model_name
-        self.temperature = temperature
-        self.embeddings = OpenAIEmbeddings()
+
+        self.embeddings = OpenAIEmbeddings(model=EMBEDDINGS_MODEL)
         self.vectorstore = vectorstore
-        self.qa_chain = None
+        self.llm = ChatOpenAI(model_name=model_name, temperature=temperature)
 
-    def _create_qa_chain(self):
-        """Create the QA chain with a custom prompt."""
+        if self.vectorstore is None:
+            raise ValueError("Vector store not initialized")
 
-        prompt_template = """You are acting as my personal assistant and will respond 
+        self.rag_chain = self._create_rag_chain()
+
+    @staticmethod
+    def build_history_prompt():
+        prompt_template = """
+        Given the chat history and the latest user question, which might 
+        reference context in the chat history, formulate a standalone question
+        that can be understood without the chat history. Do **not** answer the
+        question, just reformulate it if needed, otherwise return it as is.
+
+        Chat History:
+        {chat_history}
+
+        Follow-up Question:
+        {input}
+
+        Standalone question:
+        """
+        return PromptTemplate.from_template(prompt_template)
+
+    @staticmethod
+    def build_prompt():
+        prompt_template = """You are acting as my personal assistant and will respond
         **as if you were me**, using first person ("I", "my", etc.).
 
         You must strictly follow these rules:
 
-        1. Only use the information provided in the context below.  
+        1. Only use the information provided in the context below. 
         2. If the information is **not available or insufficient**, respond with: 
         **"I'm sorry, I do not know."**  
         3. Do **not** make up or hallucinate information.  
@@ -54,50 +71,64 @@ class RAGPipeline:
         {context}  
         ---  
         Question:  
-        {question}  
+        {input}  
         ---  
         Answer as me:
         """
 
-        prompt = PromptTemplate(
-            template=prompt_template, input_variables=["context", "question"]
+        return PromptTemplate.from_template(prompt_template)
+
+    def _create_rag_chain(self):
+        retriever = self.vectorstore.as_retriever(
+            search_type="similarity", search_kwargs={"k": 4}
         )
 
-        llm = ChatOpenAI(model_name=self.model_name, temperature=self.temperature)
+        history_prompt = self.build_history_prompt()
+        history_aware_retriever = create_history_aware_retriever(
+            llm=self.llm, retriever=retriever, prompt=history_prompt
+        )
 
-        self.qa_chain = load_qa_chain(llm=llm, chain_type="stuff", prompt=prompt)
+        answer_prompt = self.build_prompt()
+        question_answer_chain = create_stuff_documents_chain(
+            llm=self.llm, prompt=answer_prompt
+        )
 
-    def get_answer(self, question: str, k: int = 4) -> Dict[str, Any]:
+        return create_retrieval_chain(history_aware_retriever, question_answer_chain)
+
+    def generate_answer(
+        self,
+        question: str,
+        chat_history: list[dict[str, str]],
+    ) -> dict[str, Any]:
         """
-        Get an answer to a question using the RAG pipeline.
+        Generate an answer to a question using the RAG pipeline.
 
         Args:
             question: The question to answer
-            k: Number of relevant documents to retrieve
+            chat_history: The chat history
 
         Returns:
             Dict containing the answer and source documents
         """
-        if self.vectorstore is None:
-            raise ValueError("Vector store not initialized")
+        history_str = ""
 
-        if self.qa_chain is None:
-            self._create_qa_chain()
+        for message in chat_history:
+            prefix = "User" if message["role"] == "user" else "Assistant"
+            history_str += f"{prefix}: {message['content']}\n"
 
-        # Retrieve relevant documents
-        docs = self.vectorstore.similarity_search(question, k=k)
+        print(history_str)
 
-        # Get the answer
-        result = self.qa_chain(
-            {"input_documents": docs, "question": question}, return_only_outputs=True
+        result = self.rag_chain.invoke(
+            {
+                "input": question,
+                "chat_history": history_str,
+            }
         )
 
-        # Format the response
-        response = {
-            "answer": result["output_text"].strip(),
+        return {
+            "answer": result["answer"].strip(),
             "sources": [
-                {"content": doc.page_content, "metadata": doc.metadata} for doc in docs
+                {"content": doc.page_content, "metadata": doc.metadata}
+                for doc in result.get("context", [])
             ],
         }
-
-        return response
