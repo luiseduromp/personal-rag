@@ -8,5 +8,7 @@ __pycache__/
 .env
 
 # Data directories
-data/
+docs/
 chroma_db/
+
+*.bak
