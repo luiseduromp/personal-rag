@@ -26,8 +26,18 @@ class UserInDB(UserBase):
     hashed_password: str
 
 
+class ChatMessage(BaseModel):
+    role: str  # 'user' or 'assistant'
+    content: str
+
+
+class UploadRequest(BaseModel):
+    url: str
+
+
 class GenerateRequest(BaseModel):
     question: str
+    chat_history: list[ChatMessage] = []
 
 
 class SourceDocument(BaseModel):
