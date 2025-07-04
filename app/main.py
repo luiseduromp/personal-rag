@@ -1,15 +1,14 @@
 import logging
 from contextlib import asynccontextmanager
-from typing import Any, Dict
+from typing import Annotated, Any, Dict
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from .models.schemas import GenerateRequest, GenerateResponse, Token
-from .rag.loader import init_vectorstore
+from .models.schemas import GenerateRequest, GenerateResponse, Token, UploadRequest
+from .rag.loader import Loader
 from .rag.rag_pipeline import RAGPipeline
-from .rag.settings import LLM_MODEL, TEMPERATURE
-from .utils.auth import authenticate, create_access_token
+from .utils.auth import authenticate, create_access_token, verify_token
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,10 +17,13 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize the RAG pipeline."""
-    vectorstore = init_vectorstore()
-    app.state.rag_pipeline = RAGPipeline(
-        model_name=LLM_MODEL, temperature=TEMPERATURE, vectorstore=vectorstore
-    )
+    loader = Loader()
+    vectorstore = loader.init_vectorstore()
+
+    rag_pipeline = RAGPipeline(vectorstore=vectorstore)
+    app.state.rag_pipeline = rag_pipeline
+
+    logger.info("RAG pipeline initialized")
     yield
 
 
@@ -48,7 +50,9 @@ async def get_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
 
 
 @app.post("/generate", response_model=GenerateResponse)
-async def generate_answer(request: Request, body: GenerateRequest) -> Dict[str, Any]:
+async def generate_answer(
+    request: Request, body: GenerateRequest, _: Annotated[str, Depends(verify_token)]
+) -> Dict[str, Any]:
     """
     Generate an answer to a question using the RAG pipeline.
 
@@ -57,22 +61,21 @@ async def generate_answer(request: Request, body: GenerateRequest) -> Dict[str, 
     Returns:
         Dict containing the answer and source documents
     """
-    rag_pipeline: RAGPipeline = request.app.state.rag_pipeline
+    rag_pipeline = request.app.state.rag_pipeline
 
     try:
         logger.info("Generating RAG answer")
 
-        response = rag_pipeline.get_answer(question=body.question)
+        response = rag_pipeline.generate_answer(
+            question=body.question,
+            chat_history=body.chat_history,
+        )
 
         return {
             "status": "success",
             "message": "Answer generated successfully",
             "answer": response["answer"],
-            # TODO: Delete after testing
-            "sources": [
-                {"content": src["content"], "metadata": src["metadata"]}
-                for src in response["sources"]
-            ],
+            "sources": response["sources"],
         }
     except Exception as e:
         logger.error("Failed to generate answer: %s", str(e), exc_info=True)
@@ -80,3 +83,12 @@ async def generate_answer(request: Request, body: GenerateRequest) -> Dict[str, 
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate answer: {str(e)}",
         ) from e
+
+
+@app.post("/upload")
+async def upload_file(
+    body: UploadRequest, _: Annotated[str, Depends(verify_token)]
+) -> Dict[str, Any]:
+    loader = Loader()
+    loader.add_from_url(body.url)
+    return {"status": "success", "message": "Document uploaded successfully"}
