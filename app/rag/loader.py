@@ -39,6 +39,9 @@ class Loader:
         self.database_dir = database_dir
         self.data_dir = data_dir
         self.ids = []
+        logger.info("Initialized loader")
+        logger.info("Database directory: %s", database_dir)
+        logger.info("Data directory: %s", data_dir)
 
     def _check_duplicates(self, chunks: list[Document]) -> list[Document]:
         """
@@ -98,7 +101,7 @@ class Loader:
                     documents.extend(loader.load())
 
             except Exception as e:
-                logger.error(f"Error loading {file_path}: {str(e)}")
+                logger.error("Error loading %s: %s", file_path, str(e))
                 continue
 
         return documents if documents else None
@@ -136,7 +139,13 @@ class Loader:
         logger.info("Vector store not found, Building")
         os.makedirs(self.database_dir, exist_ok=True)
         documents = self.load_documents()
-        self.build_vectorstore(documents)
+
+        if documents:
+            self.build_vectorstore(documents)
+            logger.info("Vector store built with preloaded documents")
+        else:
+            logger.warning("Vector store initialized empty")
+
         return self.vectorstore
 
     def load_from_url(self, url: str) -> Document:
