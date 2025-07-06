@@ -1,34 +1,40 @@
-[tool.poetry]
+[project]
 name = "luiseduromp-rag"
 version = "0.1.0"
 description = "A personal RAG (Retrieval-Augmented Generation) application to answer questions about my personal profile"
-authors = ["Luis Romero <luiseduromp@gmail.com>"]
+authors = [{ name = "Luis Romero", email = "luiseduromp@hotmail.com" }]
 readme = "README.md"
-license = "MIT"
+license = { text = "MIT" }
+requires-python = ">=3.12,<4.0"
+dependencies = []
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=1.8.0"]
 build-backend = "poetry.core.masonry.api"
 
+[tool.poetry]
+packages = [{ include = "app" }]
+
 [tool.poetry.dependencies]
-python = "^3.12"
-fastapi = "^0.95.0"
-uvicorn = {extras = ["standard"], version = "^0.21.0"}
-python-multipart = "^0.0.6"
-python-jose = {extras = ["cryptography"], version = "^3.3.0"}
-bcrypt = "^4.0.1"
-python-dotenv = "^1.0.0"
-langchain = "^0.0.300"
-langchain-community = "^0.0.20"
-langchain-openai = "^0.0.5"
-chromadb = "^0.4.0"
-pymupdf = "^1.22.0"
-pydantic = "^1.10.22"
+python = ">=3.12,<4.0"
+fastapi = ">=0.95.0"
+uvicorn = { extras = ["standard"], version = ">=0.21.0" }
+python-multipart = ">=0.0.6"
+python-jose = { extras = ["cryptography"], version = ">=3.3.0" }
+bcrypt = ">=4.0.1"
+python-dotenv = ">=1.0.0"
+langchain = ">=0.0.300"
+langchain-community = ">=0.0.20"
+langchain-openai = ">=0.0.5"
+chromadb = ">=0.4.0"
+pymupdf = ">=1.22.0"
+pydantic = ">=2.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.0.0"

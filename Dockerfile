@@ -9,18 +9,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+    build-essential && \
+    curl -sSL https://install.python-poetry.org | python3 - && \
+    ln -s /root/.local/bin/poetry /usr/local/bin/poetry && \
+    rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir .
+COPY pyproject.toml poetry.lock* ./
+
+ENV POETRY_VIRTUALENVS_CREATE=false
+
+RUN poetry install --no-root --no-interaction
 
 COPY . .
 
-RUN mkdir -p ${CHROMA_DB_PATH} ${DOCS_PATH}
-
-RUN ln -sf ${CHROMA_DB_PATH} /app/app/chroma_db && \
+RUN mkdir -p ${CHROMA_DB_PATH} ${DOCS_PATH} && \
+    ln -sf ${CHROMA_DB_PATH} /app/app/chroma_db && \
     ln -sf ${DOCS_PATH} /app/app/docs
 
 EXPOSE 8000
