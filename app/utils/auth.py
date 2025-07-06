@@ -3,7 +3,6 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import (
     HTTPAuthorizationCredentials,
@@ -13,6 +12,8 @@ from fastapi.security import (
 from jose import JWTError, jwt
 
 if os.getenv("ENV", "development") == "development":
+    from dotenv import load_dotenv
+
     load_dotenv()
 
 logger = logging.getLogger(__name__)

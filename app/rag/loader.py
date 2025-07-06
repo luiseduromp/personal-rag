@@ -20,14 +20,10 @@ from langchain_openai import OpenAIEmbeddings
 from .settings import (
     CHUNK_OVERLAP,
     CHUNK_SIZE,
-    DATA_DIRECTORY,
-    DATABASE_DIRECTORY,
+    DATA_DIR,
+    DATABASE_DIR,
     EMBEDDINGS_MODEL,
 )
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = os.path.join(BASE_DIR, DATA_DIRECTORY)
-DATABASE_DIR = os.path.join(BASE_DIR, DATABASE_DIRECTORY)
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     CHROMA_DB_PATH=/chroma-db \
     DOCS_PATH=/rag-docs \
     POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_NO_INTERACTION=1
+    POETRY_NO_INTERACTION=1 \
+    BASE_DIR=/app \
+    ENV=production
+
 
 WORKDIR /app
 
@@ -21,10 +24,6 @@ COPY pyproject.toml poetry.lock* ./
 RUN poetry install --no-root
 
 COPY . .
-
-RUN mkdir -p ${CHROMA_DB_PATH} ${DOCS_PATH} && \
-    ln -sf ${CHROMA_DB_PATH} /app/app/chroma_db && \
-    ln -sf ${DOCS_PATH} /app/app/docs
 
 EXPOSE 8000
 
