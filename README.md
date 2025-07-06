@@ -27,11 +27,11 @@ This is a Retrieval-Augmented Generation (RAG) system that serves as a personal 
 ### Main Endpoints
 
 - `GET /` - Basic health check endpoint
-- `POST /token` - Generate an access token for API authentication
 - `POST /generate` - Generate an answer to a question using the RAG pipeline
 - `POST /upload` - Add a new document to the knowledge base via URL``
 
-## 🚀 Getting Started
+## 🧪 Trying the app
+If you want to setup this application for your own use, follow the steps below. Keep in mind that this does not cover the prerequisite installation of Python, Poetry, or the OpenAI API key creation.
 
 ### Prerequisites
 
@@ -40,7 +40,6 @@ This is a Retrieval-Augmented Generation (RAG) system that serves as a personal 
 - OpenAI API key
 
 ### Installation
-If you want to setup this application for your own use, follow the steps below. Keep in mind that this does not cover the prerequisite installation of Python and Poetry, or the OpenAI API key creation.
 
 1. Clone the repository:
    ```bash
@@ -63,6 +62,13 @@ If you want to setup this application for your own use, follow the steps below. 
    HASHED=your_hashed_password
    ```
    The username and password are used for authentication. This is a simple authentication method to prevent abuse of the API, if you plan to deploy the app.
+   You can create a hashed password using bcrypt. Here is a simple python script to do it:
+   ```python
+   import bcrypt
+   password = b"your_password"
+   hashed = bcrypt.hashpw(password, bcrypt.gensalt())
+   print(hashed)
+   ```
 
 4. Initialize the knowledge base:
    - Place your documents in the `app/docs/` directory. You may need to create the directory. The supported documents are PDF, TXT and MD.
