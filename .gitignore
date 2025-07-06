@@ -8,8 +8,8 @@ __pycache__/
 .env
 
 # Data directories
-docs/
 chroma_db/
+docs/
 
 *.bak
 dist/
