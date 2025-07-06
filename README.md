@@ -60,8 +60,13 @@ If you want to setup this application for your own use, follow the steps below. 
    ALGORITHM=HS256
    USERNAME=your_username
    HASHED=your_hashed_password
+   ALLOWED_ORIGINS=your_allowed_origins
    ```
-   The username and password are used for authentication. This is a simple authentication method to prevent abuse of the API, if you plan to deploy the app.
+   The `allowed_origins` is a comma separated list of origins that are allowed to access the API. It is used as protection to prevent API abuse. Leave as `*` to allow all origins.  
+
+   The `secret key` can be generated using a random string generator.
+
+   The `username` and `hashed` password are used for authentication. This is a simple authentication method to prevent abuse of the API. 
    You can create a hashed password using bcrypt. Here is a simple python script to do it:
    ```python
    import bcrypt

@@ -1,7 +1,9 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Dict
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
@@ -30,13 +32,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+if os.getenv("ENV", "development") == "development":
+    load_dotenv()
+
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://luiseduromp.com",
-        "https://www.luiseduromp.com",
-        "http://localhost:3000",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
