@@ -146,6 +146,7 @@ class Loader:
         documents = []
 
         list_files = self._list_bucket_files()
+        print(list_files)
 
         if not list_files:
             logger.warning("No files found in the bucket")
@@ -154,7 +155,7 @@ class Loader:
         filtered_files = [
             filename
             for filename in list_files
-            if filename.lower().startswith(self.language.lower())
+            if filename.lower().split("/")[-1].startswith(self.language.lower())
         ]
 
         if not filtered_files:
