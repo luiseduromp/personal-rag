@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
+from langdetect import detect
 
 from .models.schemas import GenerateRequest, GenerateResponse, Token, UploadRequest
 from .rag.loader import Loader
@@ -20,13 +21,18 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize the RAG pipeline."""
-    loader = Loader()
-    vectorstore = loader.init_vectorstore()
+    en_loader = Loader(language="en", collection_name="luiseduromp_rag")
+    en_vectorstore = en_loader.init_vectorstore()
+    rag_pipeline = RAGPipeline(vectorstore=en_vectorstore, language="en")
 
-    rag_pipeline = RAGPipeline(vectorstore=vectorstore)
+    es_loader = Loader(language="es", collection_name="luiseduromp_esp")
+    es_vectorstore = es_loader.init_vectorstore()
+    esp_pipeline = RAGPipeline(vectorstore=es_vectorstore, language="es")
+
     app.state.rag_pipeline = rag_pipeline
+    app.state.esp_pipeline = esp_pipeline
 
-    logger.info("RAG pipeline initialized")
+    logger.info("RAG pipelines initialized")
     yield
 
 
@@ -80,11 +86,21 @@ async def generate_answer(
         Dict containing the answer and source documents
     """
     rag_pipeline = request.app.state.rag_pipeline
+    esp_pipeline = request.app.state.esp_pipeline
 
     try:
         logger.info("Generating RAG answer")
 
-        response = rag_pipeline.generate_answer(
+        language = detect(body.question)
+
+        if language == "es":
+            pipeline = esp_pipeline
+            logger.info("Using Spanish RAG pipeline")
+        else:
+            pipeline = rag_pipeline
+            logger.info("Using English RAG pipeline")
+
+        response = pipeline.generate_answer(
             question=body.question,
             chat_history=body.chat_history,
         )

@@ -16,6 +16,7 @@ class RAGPipeline:
         model_name: str = LLM_MODEL,
         temperature: float = TEMPERATURE,
         vectorstore: Chroma = None,
+        language: str = "en",
     ):
         """
         Initialize the RAG pipeline.
@@ -23,60 +24,103 @@ class RAGPipeline:
         Args:
             model_name: Name of the OpenAI model to use
             temperature: Temperature parameter for the LLM
+            language: Language for prompts ("en" or "es")
         """
 
         self.embeddings = OpenAIEmbeddings(model=EMBEDDINGS_MODEL)
         self.vectorstore = vectorstore
         self.llm = ChatOpenAI(model_name=model_name, temperature=temperature)
+        self.language = language.lower()
 
         if self.vectorstore is None:
             raise ValueError("Vector store not initialized")
 
         self.rag_chain = self._create_rag_chain()
 
-    @staticmethod
-    def build_history_prompt():
-        prompt_template = """
-        Given the chat history and the latest user question, which might 
-        reference context in the chat history, formulate a standalone question
-        that can be understood without the chat history. Do **not** answer the
-        question, just reformulate it if needed, otherwise return it as is.
+    HISTORY_PROMPTS = {
+        "en": """
+            Given the chat history and the latest user question, which might 
+            reference context in the chat history, formulate a standalone question
+            that can be understood without the chat history. Do **not** answer the
+            question, just reformulate it if needed, otherwise return it as is.
 
-        Chat History:
-        {chat_history}
+            Chat History:
+            {chat_history}
 
-        Follow-up Question:
-        {input}
+            Follow-up Question:
+            {input}
 
-        Standalone question:
-        """
-        return PromptTemplate.from_template(prompt_template)
+            Standalone question:
+            """,
+        "es": """
+            Dado el historial de chat y la última pregunta del usuario, que podría
+            hacer referencia al contexto en el historial, formula una pregunta 
+            independiente que pueda entenderse sin el historial. **No** respondas 
+            la pregunta, solo reformúlala si es necesario, de lo contrario devuélvela 
+            como está.
 
-    @staticmethod
-    def build_prompt():
-        prompt_template = """You are acting as my personal assistant and will respond
-        **as if you were me**, using first person ("I", "my", etc.).
+            Historial de chat:
+            {chat_history}
 
-        You must strictly follow these rules:
+            Pregunta de seguimiento:
+            {input}
 
-        1. Only use the information provided in the context below. 
-        2. If the information is **not available or insufficient**, respond with: 
-        **"I'm sorry, I do not know."**  
-        3. Do **not** make up or hallucinate information.  
-        4. If the question is **too private or personal**, respond with: 
-        **"Sorry, I can't answer that."**
+            Pregunta independiente:
+            """,
+    }
 
-        ---  
-        Context:  
-        {context}  
-        ---  
-        Question:  
-        {input}  
-        ---  
-        Answer as me:
-        """
+    def build_history_prompt(self):
+        template = self.HISTORY_PROMPTS.get(self.language, self.HISTORY_PROMPTS["en"])
+        return PromptTemplate.from_template(template)
 
-        return PromptTemplate.from_template(prompt_template)
+    PROMPT_TEMPLATES = {
+        "en": """You are acting as my personal assistant and will respond
+            **as if you were me**, using first person ("I", "my", etc.).
+
+            You must strictly follow these rules:
+
+            1. Only use the information provided in the context below. 
+            2. If the information is **not available or insufficient**, respond with: 
+            **"I'm sorry, I do not know."**  
+            3. Do **not** make up or hallucinate information.  
+            4. If the question is **too private or personal**, respond with: 
+            **"Sorry, I can't answer that."**
+
+            ---  
+            Context:  
+            {context}  
+            ---  
+            Question:  
+            {input}  
+            ---  
+            Answer as me:
+            """,
+        "es": """Estás actuando como mi asistente personal y responderás
+            **como si fueras yo**, usando la primera persona ("yo", "mi", etc.).
+
+            Debes seguir estrictamente estas reglas:
+
+            1. Solo utiliza la información proporcionada en el contexto a continuación.
+            2. Si la información **no está disponible o es insuficiente**, responde con:
+            **"Lo siento, no lo sé."**
+            3. No inventes ni alucines información.
+            4. Si la pregunta es **demasiado privada o personal**, responde con:
+            **"Lo siento, no puedo responder eso."**
+
+            ---
+            Contexto:
+            {context}
+            ---
+            Pregunta:
+            {input}
+            ---
+            Responde como si fueras yo:
+            """,
+    }
+
+    def build_prompt(self):
+        template = self.PROMPT_TEMPLATES.get(self.language, self.PROMPT_TEMPLATES["en"])
+        return PromptTemplate.from_template(template)
 
     def _create_rag_chain(self):
         retriever = self.vectorstore.as_retriever(

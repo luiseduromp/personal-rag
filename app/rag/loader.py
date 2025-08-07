@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 class Loader:
     def __init__(
         self,
+        language: str = "en",
         database_dir: str = DATABASE_DIR,
         collection_name: str = DEFAULT_COLLECTION,
         data_dir: str = API_URL,
@@ -42,6 +43,7 @@ class Loader:
         self.database_dir = database_dir
         self.data_dir = data_dir
         self.ids = []
+        self.language = language
         logger.info("Initialized loader")
 
     def _list_bucket_files(self) -> list[str]:
@@ -149,7 +151,17 @@ class Loader:
             logger.warning("No files found in the bucket")
             return None
 
-        for filename in list_files:
+        filtered_files = [
+            filename
+            for filename in list_files
+            if filename.lower().startswith(self.language.lower())
+        ]
+
+        if not filtered_files:
+            logger.warning(f"No files found matching the language: {self.language}")
+            return None
+
+        for filename in filtered_files:
             file = f"{CDN_URL}/{filename}"
             logger.info(f"Loading file from: {file}")
             documents.append(self.load_from_url(file))
