@@ -86,7 +86,7 @@ class TestDecodeToken:
 
     def test_decode_token_invalid(self):
         """Test decoding an invalid token."""
-        algorithm = os.getenv("ALGORITHM")
+        algorithm = os.getenv("ALGORITHM", "")
         invalid_token = jwt.encode(
             {
                 "sub": TEST_USERNAME,
@@ -114,8 +114,8 @@ class TestDecodeToken:
             "sub": TEST_USERNAME,
             "exp": datetime.now(timezone.utc) - timedelta(minutes=5),
         }
-        secret_key = os.getenv("SECRET_KEY")
-        algorithm = os.getenv("ALGORITHM")
+        secret_key = os.getenv("SECRET_KEY", "")
+        algorithm = os.getenv("ALGORITHM", "")
         expired_token = jwt.encode(expired_payload, secret_key, algorithm)
         payload = decode_token(expired_token)
         assert payload is None

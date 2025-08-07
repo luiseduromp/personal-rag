@@ -48,8 +48,10 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    """Simple root endpoint."""
-    return {"Info": "Personal RAG API for luiseduromp chatbot"}
+    """
+    Simple root endpoint.
+    """
+    return {"info": "Personal RAG API for luiseduromp chatbot"}
 
 
 @app.post("/token", response_model=Token)

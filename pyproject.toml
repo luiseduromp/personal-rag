@@ -15,7 +15,7 @@ dependencies = [
     "langchain-community (>=0.3.27,<0.4.0)",
     "pymupdf (>=1.26.3,<2.0.0)",
     "langchain-openai (>=0.3.27,<0.4.0)",
-    "python-jose[cryptography] (>=3.5.0,<4.0.0)"
+    "python-jose[cryptography] (>=3.5.0,<4.0.0)",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -37,6 +37,7 @@ pytest-asyncio = "^0.20.0"
 black = "^23.0.0"
 ruff = "^0.1.0"
 pre-commit = "^3.0.0"
+boto3 = "^1.39.3"
 
 [tool.pytest.ini_options]
 minversion = "6.0"

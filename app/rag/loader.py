@@ -11,17 +11,15 @@ import requests
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_community.document_loaders import (
-    PyMuPDFLoader,
-    TextLoader,
-)
 from langchain_openai import OpenAIEmbeddings
 
 from .settings import (
+    API_URL,
+    CDN_URL,
     CHUNK_OVERLAP,
     CHUNK_SIZE,
-    DATA_DIR,
     DATABASE_DIR,
+    DEFAULT_COLLECTION,
     EMBEDDINGS_MODEL,
 )
 
@@ -29,10 +27,15 @@ logger = logging.getLogger(__name__)
 
 
 class Loader:
-    def __init__(self, database_dir: str = DATABASE_DIR, data_dir: str = DATA_DIR):
+    def __init__(
+        self,
+        database_dir: str = DATABASE_DIR,
+        collection_name: str = DEFAULT_COLLECTION,
+        data_dir: str = API_URL,
+    ):
         self.embeddings = OpenAIEmbeddings(model=EMBEDDINGS_MODEL)
         self.vectorstore = Chroma(
-            collection_name="luiseduromp_rag",
+            collection_name=collection_name,
             persist_directory=database_dir,
             embedding_function=self.embeddings,
         )
@@ -40,8 +43,22 @@ class Loader:
         self.data_dir = data_dir
         self.ids = []
         logger.info("Initialized loader")
-        logger.info("Database directory: %s", database_dir)
-        logger.info("Data directory: %s", data_dir)
+
+    def _list_bucket_files(self) -> list[str]:
+        """
+        List all files in the S3 Bucket
+        """
+        try:
+            response = requests.get(
+                f"{self.data_dir}/rag-list-docs",
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("files", [])
+        except Exception as e:
+            logger.error("Error listing bucket files: %s", str(e))
+            return []
 
     def _check_duplicates(self, chunks: list[Document]) -> list[Document]:
         """
@@ -58,13 +75,9 @@ class Loader:
             content_hash = self._compute_hash(chunk.page_content)
             chunk.metadata["content_hash"] = content_hash
 
-            results = self.vectorstore.similarity_search_by_vector(
-                self.embeddings.embed_query(chunk.page_content), k=1
-            )
+            results = self.vectorstore.get(where={"content_hash": content_hash})
 
-            if results and any(
-                r.metadata["content_hash"] == content_hash for r in results
-            ):
+            if results and results.get("documents"):
                 logger.info("Skipping duplicate chunk")
                 continue
 
@@ -73,85 +86,20 @@ class Loader:
         return store_chunks
 
     def _compute_hash(self, text: str) -> str:
-        return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-    def load_documents(self) -> Optional[list[Document]]:
         """
-        Load all .txt, .md, and .pdf files from the data directory.
-
-        Returns:
-            List of loaded documents, or None if directory doesn't exist or is empty
-        """
-        documents = []
-
-        if not os.path.isdir(self.data_dir) or not os.listdir(self.data_dir):
-            logger.warning("Directory does not exist or is empty")
-            return None
-
-        files = os.listdir(self.data_dir)
-        for file_path in files:
-            full_path = os.path.join(self.data_dir, file_path)
-            try:
-                logger.info("Loading document: %s", file_path)
-                if file_path.endswith((".txt", ".md")):
-                    loader = TextLoader(full_path, encoding="utf-8")
-                    documents.extend(loader.load())
-                elif file_path.endswith(".pdf"):
-                    loader = PyMuPDFLoader(full_path)
-                    documents.extend(loader.load())
-
-            except Exception as e:
-                logger.error("Error loading %s: %s", file_path, str(e))
-                continue
-
-        return documents if documents else None
-
-    def build_vectorstore(self, documents: list[Document]) -> Chroma:
-        """
-        Build a vector store from the given documents.
+        Compute a SHA-256 hash of the given text.
 
         Args:
-            documents: List of documents to build the vector store from
+            text: Text to hash
 
         Returns:
-            Chroma vector store
+            SHA-256 hash of the text
         """
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
-        )
-        chunks = splitter.split_documents(documents)
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-        store_chunks = self._check_duplicates(chunks)
-
-        if store_chunks:
-            ids = self.vectorstore.add_documents(store_chunks)
-            self.ids.extend(ids)
-            logger.info("Added new documents to vector store")
-
-    def init_vectorstore(self) -> Chroma:
+    def load_from_url(self, url: str) -> Optional[Document]:
         """
-        Initialize the vector store.
-        """
-        if os.path.isdir(self.database_dir) and self.ids:
-            logger.info("Vector store found, using existing")
-            return self.vectorstore
-
-        logger.info("Vector store not found, Building")
-        os.makedirs(self.database_dir, exist_ok=True)
-        documents = self.load_documents()
-
-        if documents:
-            self.build_vectorstore(documents)
-            logger.info("Vector store built with preloaded documents")
-        else:
-            logger.warning("Vector store initialized empty")
-
-        return self.vectorstore
-
-    def load_from_url(self, url: str) -> Document:
-        """
-        Load a single document (pdf, txt or markdown) from a URL
-        and save it to data_dir.
+        Load a single document (pdf, txt or markdown) from a URL.
 
         Args:
             url: URL of the document to load
@@ -173,50 +121,74 @@ class Loader:
             file_ext = mimetypes.guess_extension(content_type) or ".txt"
 
         if file_ext not in [".txt", ".md", ".pdf"]:
-            raise ValueError(f"Unsupported file type: {file_ext}")
-
-        os.makedirs(self.data_dir, exist_ok=True)
-
-        file_path = os.path.join(self.data_dir, filename)
-        with open(file_path, "wb") as f:
-            f.write(content_bytes)
-
-        logger.info("Saved a new document in the data directory")
+            logger.error(f"Unsupported file type: {file_ext}")
+            return None
 
         if file_ext in [".txt", ".md"]:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
+            content = content_bytes.decode("utf-8")
         else:
-            with fitz.open(file_path) as doc:
+            with fitz.open(stream=content_bytes, filetype="pdf") as doc:
                 content = "\n\n".join([page.get_text() for page in doc])
 
         return Document(
             page_content=content, metadata={"source": url, "file_type": file_ext}
         )
 
-    def insert_one(self, document: Document) -> str:
+    def load_documents(self) -> Optional[list[Document]]:
         """
-        Inserts a document into the vector store.
-
-        Args:
-            document: Document to insert
+        Load all .txt, .md, and .pdf files from the cloud data directory.
 
         Returns:
-            ID of the inserted document
+            List of loaded documents, or None if directory doesn't exist or is empty
+        """
+        documents = []
+
+        list_files = self._list_bucket_files()
+
+        if not list_files:
+            logger.warning("No files found in the bucket")
+            return None
+
+        for filename in list_files:
+            file = f"{CDN_URL}/{filename}"
+            logger.info(f"Loading file from: {file}")
+            documents.append(self.load_from_url(file))
+
+        return documents if documents else None
+
+    def build_vectorstore(self, documents: list[Document]):
+        """
+        Build or augment a vector store from the given documents.
+
+        Args:
+            documents: List of documents to build the vector store
         """
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
         )
-        chunks = splitter.split_documents([document])
+        chunks = splitter.split_documents(documents)
 
         store_chunks = self._check_duplicates(chunks)
 
         if store_chunks:
             ids = self.vectorstore.add_documents(store_chunks)
             self.ids.extend(ids)
-            logger.info("Added new Document to vector store")
+            logger.info("Added new documents to vector store")
 
     def add_from_url(self, url: str) -> str:
         document = self.load_from_url(url)
-        self.insert_one(document)
+        self.build_vectorstore([document])
         return document.metadata["source"]
+
+    def init_vectorstore(self):
+        """
+        Initialize the vectorstore at the start of the application.
+        """
+        documents = self.load_documents()
+        if documents:
+            logger.info("Building vector store with loaded documents")
+            self.build_vectorstore(documents)
+        else:
+            logger.warning("No documents found to build the vector store")
+
+        return self.vectorstore
