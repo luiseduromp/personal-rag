@@ -1,3 +1,5 @@
+import logging
+from datetime import datetime
 from typing import Any
 
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -5,9 +7,12 @@ from langchain.chains.history_aware_retriever import create_history_aware_retrie
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain.prompts import PromptTemplate
 from langchain_community.vectorstores import Chroma
+from langchain_core.runnables.base import Runnable
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from .settings import EMBEDDINGS_MODEL, LLM_MODEL, TEMPERATURE
+
+logger = logging.getLogger(__name__)
 
 
 class RAGPipeline:
@@ -26,56 +31,65 @@ class RAGPipeline:
             temperature: Temperature parameter for the LLM
             language: Language for prompts ("en" or "es")
         """
+        if vectorstore is None:
+            raise ValueError("Vector store not initialized")
 
         self.embeddings = OpenAIEmbeddings(model=EMBEDDINGS_MODEL)
         self.vectorstore = vectorstore
         self.llm = ChatOpenAI(model_name=model_name, temperature=temperature)
         self.language = language.lower()
-
-        if self.vectorstore is None:
-            raise ValueError("Vector store not initialized")
-
         self.rag_chain = self._create_rag_chain()
+        logger.info(f"Initialized RAG pipeline for language: {self.language}")
 
     HISTORY_PROMPTS = {
         "en": """
-            Given the chat history and the latest user question, which might 
-            reference context in the chat history, formulate a standalone question
-            that can be understood without the chat history. Do **not** answer the
-            question, just reformulate it if needed, otherwise return it as is.
+            Given the chat history and the latest user question, which may reference 
+            information from the chat history, rewrite the question so that it can be 
+            fully understood on its own without needing the chat history. Follow these
+            rules:
+            1. If the question already makes sense on its own, return it exactly as is.
+            2. Preserve all important details (names, dates, numbers, and context) from 
+            the chat history.
+            3. Do not add new information, make assumptions, or answer the question.
 
             Chat History:
             {chat_history}
 
-            Follow-up Question:
+            Latest Question:
             {input}
 
             Standalone question:
             """,
         "es": """
-            Dado el historial de chat y la última pregunta del usuario, que podría
-            hacer referencia al contexto en el historial, formula una pregunta 
-            independiente que pueda entenderse sin el historial. **No** respondas 
-            la pregunta, solo reformúlala si es necesario, de lo contrario devuélvela 
-            como está.
+            Teniendo en cuenta el historial de chat y la última pregunta del usuario, 
+            que puede hacer referencia a información del historial de chat, reescribe 
+            la pregunta para que se entienda completamente por sí sola sin necesidad 
+            del historial. Sigue las siguientes reglas.
+            1. Si la pregunta ya tiene sentido por sí sola, devuélvela tal como está.
+            2. Conserva todos los detalles importantes (nombres, fechas, números y 
+            contexto) del historial de chat.
+            3. No añadas información nueva, hagas suposiciones ni respondas la pregunta.
 
             Historial de chat:
             {chat_history}
 
-            Pregunta de seguimiento:
+            Ultima pregunta:
             {input}
 
             Pregunta independiente:
             """,
     }
 
-    def build_history_prompt(self):
+    def build_history_prompt(self) -> PromptTemplate:
         template = self.HISTORY_PROMPTS.get(self.language, self.HISTORY_PROMPTS["en"])
         return PromptTemplate.from_template(template)
 
     PROMPT_TEMPLATES = {
         "en": """You are acting as my personal assistant and will respond
             **as if you were me**, using first person ("I", "my", etc.).
+
+            Today's date is {date}. Use it to interpret and respond with
+            time references.
 
             You must strictly follow these rules:
 
@@ -85,6 +99,7 @@ class RAGPipeline:
             3. Do **not** make up or hallucinate information.  
             4. If the question is **too private or personal**, respond with: 
             **"Sorry, I can't answer that."**
+            5. Do not state as **future** anything dated before today.
 
             ---  
             Context:  
@@ -98,6 +113,9 @@ class RAGPipeline:
         "es": """Estás actuando como mi asistente personal y responderás
             **como si fueras yo**, usando la primera persona ("yo", "mi", etc.).
 
+            La fecha de hoy es {date}. Úsala para interpretar y responder con
+            referencias temporales.
+
             Debes seguir estrictamente estas reglas:
 
             1. Solo utiliza la información proporcionada en el contexto a continuación.
@@ -106,6 +124,7 @@ class RAGPipeline:
             3. No inventes ni alucines información.
             4. Si la pregunta es **demasiado privada o personal**, responde con:
             **"Lo siento, no puedo responder eso."**
+            5. No declares como **futuro** nada con fecha antes de hoy.
 
             ---
             Contexto:
@@ -118,21 +137,24 @@ class RAGPipeline:
             """,
     }
 
-    def build_prompt(self):
+    def build_prompt(self) -> PromptTemplate:
         template = self.PROMPT_TEMPLATES.get(self.language, self.PROMPT_TEMPLATES["en"])
         return PromptTemplate.from_template(template)
 
-    def _create_rag_chain(self):
+    def _create_rag_chain(self) -> Runnable:
         retriever = self.vectorstore.as_retriever(
-            search_type="similarity", search_kwargs={"k": 4}
+            search_type="similarity", search_kwargs={"k": 6}
         )
 
         history_prompt = self.build_history_prompt()
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        answer_prompt = self.build_prompt().partial(date=today)
+
         history_aware_retriever = create_history_aware_retriever(
             llm=self.llm, retriever=retriever, prompt=history_prompt
         )
 
-        answer_prompt = self.build_prompt()
         question_answer_chain = create_stuff_documents_chain(
             llm=self.llm, prompt=answer_prompt
         )
@@ -159,8 +181,6 @@ class RAGPipeline:
         for message in chat_history:
             prefix = "User" if message["role"] == "user" else "Assistant"
             history_str += f"{prefix}: {message['content']}\n"
-
-        print(history_str)
 
         result = self.rag_chain.invoke(
             {
