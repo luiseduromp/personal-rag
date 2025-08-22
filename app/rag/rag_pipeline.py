@@ -16,6 +16,28 @@ logger = logging.getLogger(__name__)
 
 
 class RAGPipeline:
+    """Retrieval-Augmented Generation (RAG) pipeline wrapper.
+
+    Wires together an OpenAI Chat model, OpenAI embeddings and a Chroma
+    vectorstore to produce history-aware retrieval-augmented answers.
+
+    Constructor:
+        model_name: LLM model name (defaults to value from settings).
+        temperature: LLM temperature.
+        vectorstore: Initialized `Chroma` vector store (required).
+        language: Pipeline language, e.g. "en" or "es".
+
+    Main methods:
+        build_history_prompt() -> PromptTemplate
+        build_prompt() -> PromptTemplate
+        generate_answer(question, chat_history) -> dict with keys:
+            - answer: generated answer string
+            - sources: list of source documents with 'content' and 'metadata'
+
+    Raises:
+        ValueError: if `vectorstore` is not provided to the constructor.
+    """
+
     def __init__(
         self,
         model_name: str = LLM_MODEL,
@@ -81,12 +103,20 @@ class RAGPipeline:
     }
 
     def build_history_prompt(self) -> PromptTemplate:
+        """
+        Builds a history prompt template for the RAG pipeline.
+
+        Returns:
+            PromptTemplate: The history prompt template.
+        """
         template = self.HISTORY_PROMPTS.get(self.language, self.HISTORY_PROMPTS["en"])
         return PromptTemplate.from_template(template)
 
     PROMPT_TEMPLATES = {
         "en": """You are acting as my personal assistant and will respond
             **as if you were me**, using first person ("I", "my", etc.).
+            Add some personality to your answers using emojis and not so
+            formal language.
 
             Today's date is {date}. Use it to interpret and respond with
             time references.
@@ -112,6 +142,8 @@ class RAGPipeline:
             """,
         "es": """Estás actuando como mi asistente personal y responderás
             **como si fueras yo**, usando la primera persona ("yo", "mi", etc.).
+            Añade personalidad a tus respuestas usando emojis y un lenguaje 
+            menos formal.
 
             La fecha de hoy es {date}. Úsala para interpretar y responder con
             referencias temporales.
@@ -138,10 +170,20 @@ class RAGPipeline:
     }
 
     def build_prompt(self) -> PromptTemplate:
+        """
+        Builds the main prompt template for the RAG pipeline.
+
+        Returns:
+            PromptTemplate: The main prompt template.
+        """
         template = self.PROMPT_TEMPLATES.get(self.language, self.PROMPT_TEMPLATES["en"])
         return PromptTemplate.from_template(template)
 
     def _create_rag_chain(self) -> Runnable:
+        """
+        Creates the context aware RAG chain for document retrieval and answer
+        generation.
+        """
         retriever = self.vectorstore.as_retriever(
             search_type="similarity", search_kwargs={"k": 6}
         )

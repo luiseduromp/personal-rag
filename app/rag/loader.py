@@ -23,7 +23,6 @@ from .settings import (
     CHUNK_SIZE,
     DATA_DIR,
     DATABASE_DIR,
-    DEFAULT_COLLECTION,
     EMBEDDINGS_MODEL,
 )
 
@@ -31,11 +30,37 @@ logger = logging.getLogger(__name__)
 
 
 class Loader:
+    """Manage loading, splitting, and indexing documents into a Chroma vector store.
+
+    Responsibilities
+    - Initialize OpenAI embeddings and a Chroma vectorstore for a given collection.
+    - Load documents from a remote API (S3-style) or a local `app/docs` directory.
+    - Accepts and parses `.md`, `.txt`, and `.pdf` files only.
+    - Filter documents by language prefix (files start with `EN` or `ES`) using
+      `_filter_by_lang` so only files matching `self.language` are loaded.
+    - Split markdown with heading-aware splitter and other formats with a
+      generic recursive splitter, then deduplicate chunks by SHA-256 content
+      hash before adding to the vector store.
+
+    Constructor parameters
+    - language (str): language hint used for filtering and splitters (e.g. "en").
+    - database_dir (str): directory where Chroma persists its store.
+    - collection_name (str): Chroma collection name to use.
+    - data_dir (str or Path): local directory containing documentation files.
+    - data_url (str): base URL for remote document listing.
+
+    Public methods of note
+    - load_from_url(url) -> Optional[Document]
+    - load_documents() -> Optional[list[Document]]
+    - add_from_url(url) -> Optional[str]
+    - init_vectorstore() -> Chroma
+    """
+
     def __init__(
         self,
         language: str = "en",
         database_dir: str = DATABASE_DIR,
-        collection_name: str = DEFAULT_COLLECTION,
+        collection_name: str = "en_collection",
         data_dir: str = DATA_DIR,
         data_url: str = API_URL,
     ):
@@ -70,7 +95,7 @@ class Loader:
 
     def _list_bucket_files(self) -> list[str]:
         """
-        List all files in the S3 Bucket
+        List all files in the S3 Bucket.
         """
         try:
             response = requests.get(
@@ -221,6 +246,7 @@ class Loader:
         ]
 
     def _filter_by_lang(self, files: list[str]) -> list[str]:
+        """Filter files by language."""
         filtered_files = [
             filename
             for filename in files
@@ -228,7 +254,6 @@ class Loader:
         ]
 
         if not filtered_files:
-            logger.warning(f"No files found matching the language: {self.language}")
             return None
 
         return filtered_files
@@ -246,7 +271,9 @@ class Loader:
         filtered_files = self._filter_by_lang(list_files)
 
         if not filtered_files:
-            logger.warning(f"No files found matching the language: {self.language}")
+            logger.warning(
+                f"No files found in Bucket matching the language: {self.language}"
+            )
             return None
 
         documents: list[Document] = []
@@ -285,7 +312,9 @@ class Loader:
         filtered_files = self._filter_by_lang(all_files)
 
         if not filtered_files:
-            logger.warning(f"No files found matching the language: {self.language}")
+            logger.warning(
+                f"No files found in disk matching the language: {self.language}"
+            )
             return None
 
         documents: list[Document] = []
@@ -319,10 +348,11 @@ class Loader:
 
     def load_documents(self) -> Optional[list[Document]]:
         """
-        Load all .txt, .md, and .pdf files from the cloud data directory.
+        Load all .txt, .md, and .pdf files from the local and cloud directories
 
         Returns:
-            List of loaded documents, or None if directory doesn't exist or is empty
+            List of loaded documents, or None if the directory/bucket doesn't
+            exist or is empty
         """
 
         documents: list[Document] = self._load_from_disk() or []

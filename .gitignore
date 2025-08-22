@@ -9,7 +9,7 @@ __pycache__/
 
 # Data directories
 chroma_db/
-docs/
+rag_docs/
 
 *.bak
 dist/

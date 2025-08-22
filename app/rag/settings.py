@@ -17,7 +17,6 @@ _raw_base_dir = os.getenv("BASE_DIR", "app")
 BASE_DIR = Path(_raw_base_dir).resolve()
 DATA_DIR = os.path.join(BASE_DIR, "docs")
 DATABASE_DIR = os.path.join(BASE_DIR, "chroma_db")
-DEFAULT_COLLECTION = "luiseduromp_rag"
 
 API_URL = os.getenv("API_URL", "")
 CDN_URL = os.getenv("CDN_URL", "")
