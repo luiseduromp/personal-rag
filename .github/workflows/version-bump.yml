@@ -1,0 +1,124 @@
+name: Version Bump
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - ".github/**"
+      - "docs/**"
+      - "*.md"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-bump-main
+  cancel-in-progress: false
+
+jobs:
+  bump-version:
+    name: Increment PATCH Version
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv pip install tomlkit
+
+      - name: Bump PATCH in pyproject.toml
+        id: bump-version
+        run: |
+          uv run python - << 'PY'
+          import os
+          import sys
+          import tomlkit
+
+          file_path = "pyproject.toml"
+          
+          with open(file_path, "r", encoding="utf-8") as f:
+              content = f.read()
+              
+          doc = tomlkit.parse(content)
+          
+          if "project" not in doc or "version" not in doc["project"]:
+              sys.exit("ERROR: version not found in [project] table")
+
+          current_version = doc["project"]["version"]
+          print(f"Current version: {current_version}")
+          
+          try:
+              major, minor, patch = map(int, current_version.split("."))
+          except ValueError:
+               sys.exit(f"ERROR: version '{current_version}' is not in MAJOR.MINOR.PATCH format")
+
+          patch += 1
+          new_version = f"{major}.{minor}.{patch}"
+          print(f"New version: {new_version}")
+
+          doc["project"]["version"] = new_version
+          
+          with open(file_path, "w", encoding="utf-8") as f:
+              f.write(tomlkit.dumps(doc))
+
+          # Write outputs for later steps
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"current_version={current_version}\n")
+              f.write(f"new_version={new_version}\n")
+              f.write(f"major={major}\n")
+              f.write(f"minor={minor}\n")
+              f.write(f"patch={patch-1}\n")
+          PY
+
+      - name: Export APP_VERSION
+        run: echo "APP_VERSION=${{ steps.bump-version.outputs.new_version }}" >> $GITHUB_ENV
+
+      - name: Commit version bump
+        id: commit
+        run: |
+          if git diff --quiet pyproject.toml; then
+            echo "No version changes detected"
+            echo "committed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          git add pyproject.toml
+          git commit -m "chore: bump version to ${{ steps.bump-version.outputs.new_version }} [skip ci]"
+          
+          # Pull before pushing to avoid race conditions
+          git pull --rebase origin main
+          git push
+          echo "committed=true" >> $GITHUB_OUTPUT
+
+      - name: Create Git tag
+        if: steps.commit.outputs.committed == 'true'
+        run: |
+          TAG="v${{ steps.bump-version.outputs.new_version }}"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Summary
+        if: steps.commit.outputs.committed == 'true'
+        run: |
+          echo "## Version Bump Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Previous Version:** ${{ steps.bump-version.outputs.current_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **New Version:** ${{ steps.bump-version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag Created:** v${{ steps.bump-version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY

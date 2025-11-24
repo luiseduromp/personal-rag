@@ -10,15 +10,10 @@ repos:
     hooks:
       - id: black
 
-  - repo: https://github.com/python-poetry/poetry
-    rev: 2.1.3
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.5.29
     hooks:
-      - id: poetry-check
-        name: poetry check
-        entry: poetry
-        args: [check]
-        language: system
-        pass_filenames: false
+      - id: uv-lock
 
         
 

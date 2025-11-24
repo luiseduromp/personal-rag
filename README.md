@@ -1,4 +1,4 @@
-# Personal RAG Application
+7# Personal RAG Application
 
 This is a multilingual Retrieval-Augmented Generation (RAG) system that serves as a personal AI assistant, capable of answering
 questions about my professional background, skills, and experience, in English and Spanish 🎉. It uses an LLM to process and 
@@ -65,9 +65,9 @@ URL to trigger the Lambda function and the CDN URL.
    cd personal-rag
    ```
 
-2. Install dependencies using Poetry:
+2. Install dependencies using uv:
    ```bash
-   poetry install
+   uv sync
    ```
 
 3. Set up environment variables:
@@ -101,7 +101,7 @@ URL to trigger the Lambda function and the CDN URL.
 
 1. Start the FastAPI server:
    ```bash
-   poetry run uvicorn app.main:app --reload
+   uv run uvicorn app.main:app --reload
    ```
 
 2. The API will be available at `http://localhost:8000`
