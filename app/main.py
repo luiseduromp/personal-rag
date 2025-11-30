@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Dict
 
@@ -9,7 +10,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from langdetect import detect
 
-from .models.schemas import GenerateRequest, GenerateResponse, Token, UploadRequest
+from .models.schemas import (
+    GenerateDebugResponse,
+    GenerateRequest,
+    GenerateResponse,
+    Token,
+    UploadRequest,
+)
 from .rag.loader import Loader
 from .rag.rag_pipeline import RAGPipeline
 from .utils.auth import authenticate, create_access_token, verify_token
@@ -21,19 +28,28 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize the RAG pipeline."""
+    logger.info("⏳ Starting application initialization...")
+
+    logger.info("⚡ Initializing English RAG pipeline...")
     en_loader = Loader(language="en", collection_name="luiseduromp_rag")
     en_vectorstore = en_loader.init_vectorstore()
     rag_pipeline = RAGPipeline(vectorstore=en_vectorstore, language="en")
+    logger.info("✅ English RAG pipeline initialized successfully")
 
+    logger.info("⚡ Initializing Spanish RAG pipeline...")
     es_loader = Loader(language="es", collection_name="luiseduromp_esp")
     es_vectorstore = es_loader.init_vectorstore()
     esp_pipeline = RAGPipeline(vectorstore=es_vectorstore, language="es")
+    logger.info("✅ Spanish RAG pipeline initialized successfully")
 
     app.state.rag_pipeline = rag_pipeline
     app.state.esp_pipeline = esp_pipeline
 
-    logger.info("RAG pipelines initialized")
+    logger.info(
+        "✅ All RAG pipelines initialized - Application ready to serve requests"
+    )
     yield
+    logger.info("👋 Application shutdown complete")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -54,9 +70,7 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    """
-    Simple root endpoint.
-    """
+    """Simple root endpoint."""
     return {"info": "Personal RAG API for a chatbot"}
 
 
@@ -70,7 +84,12 @@ async def get_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token = create_access_token(form_data.username)
-    return {"access_token": access_token, "token_type": "bearer"}
+    thread_id = str(uuid.uuid4())
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "thread_id": thread_id,
+    }
 
 
 @app.post("/generate", response_model=GenerateResponse)
@@ -100,9 +119,12 @@ async def generate_answer(
             pipeline = rag_pipeline
             logger.info("Using English RAG pipeline")
 
+        thread_id = body.thread_id or str(uuid.uuid4())
+        logger.info("Using thread_id: %s", thread_id)
+
         response = pipeline.generate_answer(
             question=body.question,
-            chat_history=body.chat_history,
+            thread_id=thread_id,
         )
 
         return {
@@ -110,6 +132,60 @@ async def generate_answer(
             "message": "Answer generated successfully",
             "answer": response["answer"],
             "sources": response["sources"],
+            "thread_id": thread_id,
+        }
+    except Exception as e:
+        logger.error("Failed to generate answer: %s", str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate answer: {str(e)}",
+        ) from e
+
+
+@app.post("/generate-debug", response_model=GenerateDebugResponse)
+async def generate_answer_debug(
+    request: Request, body: GenerateRequest, _: Annotated[str, Depends(verify_token)]
+) -> Dict[str, Any]:
+    """
+    Generate an answer to a question using the RAG pipeline with debug information.
+
+    This endpoint includes the rewritten question in the response for debugging purposes
+
+    Args:
+        body: The request containing the question
+    Returns:
+        Dict containing the answer, rewritten question, and source documents
+    """
+    rag_pipeline = request.app.state.rag_pipeline
+    esp_pipeline = request.app.state.esp_pipeline
+
+    try:
+        logger.info("⚙️ Generating RAG answer (debug mode)")
+
+        language = detect(body.question)
+
+        if language == "es":
+            pipeline = esp_pipeline
+            logger.info("Using Spanish RAG pipeline")
+        else:
+            pipeline = rag_pipeline
+            logger.info("Using English RAG pipeline")
+
+        thread_id = body.thread_id or str(uuid.uuid4())
+        logger.info("Using thread_id: %s", thread_id)
+
+        response = pipeline.generate_answer(
+            question=body.question,
+            thread_id=thread_id,
+        )
+
+        return {
+            "status": "success",
+            "message": "Answer generated successfully",
+            "answer": response["answer"],
+            "sources": response["sources"],
+            "thread_id": thread_id,
+            "rewritten_question": response["rewritten_question"],
         }
     except Exception as e:
         logger.error("Failed to generate answer: %s", str(e), exc_info=True)
