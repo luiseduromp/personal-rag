@@ -272,7 +272,7 @@ class Loader:
 
         if not filtered_files:
             logger.warning(
-                f"No files found in Bucket matching the language: {self.language}"
+                "No files found in Bucket matching the language: %s", self.language
             )
             return None
 
@@ -280,7 +280,7 @@ class Loader:
 
         for filename in filtered_files:
             file = f"{CDN_URL}/{filename}"
-            logger.info(f"Loading file from URL: {file}")
+            logger.info("Loading file from URL: %s", file)
             doc = self.load_from_url(file)
 
             if doc:
@@ -313,7 +313,7 @@ class Loader:
 
         if not filtered_files:
             logger.warning(
-                f"No files found in disk matching the language: {self.language}"
+                "No files found in disk matching the language: %s", self.language
             )
             return None
 
@@ -321,7 +321,7 @@ class Loader:
 
         for file_path in filtered_files:
             file_path = Path(file_path)
-            logger.info(f"Loading file from disk: {file_path}")
+            logger.info("Loading file from disk: %s", file_path)
 
             try:
                 if file_path.suffix.lower() in [".txt", ".md"]:
@@ -342,7 +342,7 @@ class Loader:
                     )
                 )
             except Exception as e:
-                logger.error(f"Failed to load file {file_path}: {e}")
+                logger.error("Failed to load file %s: %s", file_path, e)
 
         return documents or None
 
@@ -409,7 +409,7 @@ class Loader:
             self.build_vectorstore([document])
             return document.metadata["source"]
         else:
-            logger.error(f"Failed to load document from URL: {url}")
+            logger.error("Failed to load document from URL: %s", url)
             return None
 
     def init_vectorstore(self):

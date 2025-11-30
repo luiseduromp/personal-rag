@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class Token(BaseModel):
     access_token: str
     token_type: str
+    thread_id: str
 
 
 class TokenData(BaseModel):
@@ -38,6 +39,7 @@ class UploadRequest(BaseModel):
 class GenerateRequest(BaseModel):
     question: str
     chat_history: list[ChatMessage] = []
+    thread_id: Optional[str] = None
 
 
 class SourceDocument(BaseModel):
@@ -50,3 +52,10 @@ class GenerateResponse(BaseModel):
     message: Optional[str]
     answer: str
     sources: Optional[list[SourceDocument]]
+    thread_id: Optional[str] = None
+
+
+class GenerateDebugResponse(GenerateResponse):
+    """Extended response model for debugging that includes the rewritten question."""
+
+    rewritten_question: str

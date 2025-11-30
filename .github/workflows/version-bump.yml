@@ -97,7 +97,7 @@ jobs:
           git config --local user.name "github-actions[bot]"
 
           git add pyproject.toml
-          git commit -m "chore: bump version to ${{ steps.bump-version.outputs.new_version }} [skip ci]"
+          git commit -m "🛠️ [bot] Bump version to ${{ steps.bump-version.outputs.new_version }} [skip ci]"
           
           # Pull before pushing to avoid race conditions
           git pull --rebase origin main
