@@ -6,7 +6,7 @@ if os.getenv("ENV", "development") == "development":
 
     load_dotenv()
 
-LLM_MODEL = "gpt-4o-mini"
+LLM_MODEL = "gpt-5.1"
 TEMPERATURE = 0.5
 EMBEDDINGS_MODEL = "text-embedding-3-small"
 
