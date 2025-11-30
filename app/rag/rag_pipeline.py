@@ -1,22 +1,41 @@
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, TypedDict
 
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains.history_aware_retriever import create_history_aware_retriever
-from langchain.chains.retrieval import create_retrieval_chain
 from langchain.prompts import PromptTemplate
 from langchain_community.vectorstores import Chroma
-from langchain_core.runnables.base import Runnable
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import START, StateGraph
 
+from .prompts import HISTORY_PROMPTS, PROMPT_TEMPLATES
 from .settings import EMBEDDINGS_MODEL, LLM_MODEL, TEMPERATURE
 
 logger = logging.getLogger(__name__)
 
 
+class GraphState(TypedDict):
+    """
+    Represents the state of our graph.
+
+    Attributes:
+        question: Original user question
+        rewritten_question: Context-aware rewritten question (optional)
+        documents: Retrieved documents from vectorstore
+        answer: Generated answer (optional)
+        messages: Full conversation history for persistence and context
+    """
+
+    question: str
+    rewritten_question: str | None
+    documents: list[Any]
+    answer: str | None
+    messages: list[BaseMessage]
+
+
 class RAGPipeline:
-    """Retrieval-Augmented Generation (RAG) pipeline wrapper.
+    """Retrieval-Augmented Generation (RAG) pipeline wrapper using LangGraph.
 
     Wires together an OpenAI Chat model, OpenAI embeddings and a Chroma
     vectorstore to produce history-aware retrieval-augmented answers.
@@ -28,9 +47,7 @@ class RAGPipeline:
         language: Pipeline language, e.g. "en" or "es".
 
     Main methods:
-        build_history_prompt() -> PromptTemplate
-        build_prompt() -> PromptTemplate
-        generate_answer(question, chat_history) -> dict with keys:
+        generate_answer(question, thread_id) -> dict with keys:
             - answer: generated answer string
             - sources: list of source documents with 'content' and 'metadata'
 
@@ -60,47 +77,14 @@ class RAGPipeline:
         self.vectorstore = vectorstore
         self.llm = ChatOpenAI(model_name=model_name, temperature=temperature)
         self.language = language.lower()
-        self.rag_chain = self._create_rag_chain()
-        logger.info(f"Initialized RAG pipeline for language: {self.language}")
 
-    HISTORY_PROMPTS = {
-        "en": """
-            Given the chat history and the latest user question, which may reference 
-            information from the chat history, rewrite the question so that it can be 
-            fully understood on its own without needing the chat history. Follow these
-            rules:
-            1. If the question already makes sense on its own, return it exactly as is.
-            2. Preserve all important details (names, dates, numbers, and context) from 
-            the chat history.
-            3. Do not add new information, make assumptions, or answer the question.
+        self.retriever = self.vectorstore.as_retriever(
+            search_type="similarity", search_kwargs={"k": 6}
+        )
 
-            Chat History:
-            {chat_history}
+        self.graph = self._build_graph()
 
-            Latest Question:
-            {input}
-
-            Standalone question:
-            """,
-        "es": """
-            Teniendo en cuenta el historial de chat y la última pregunta del usuario, 
-            que puede hacer referencia a información del historial de chat, reescribe 
-            la pregunta para que se entienda completamente por sí sola sin necesidad 
-            del historial. Sigue las siguientes reglas.
-            1. Si la pregunta ya tiene sentido por sí sola, devuélvela tal como está.
-            2. Conserva todos los detalles importantes (nombres, fechas, números y 
-            contexto) del historial de chat.
-            3. No añadas información nueva, hagas suposiciones ni respondas la pregunta.
-
-            Historial de chat:
-            {chat_history}
-
-            Ultima pregunta:
-            {input}
-
-            Pregunta independiente:
-            """,
-    }
+        logger.info("✅ Initialized RAG pipeline for language: %s", self.language)
 
     def build_history_prompt(self) -> PromptTemplate:
         """
@@ -109,65 +93,8 @@ class RAGPipeline:
         Returns:
             PromptTemplate: The history prompt template.
         """
-        template = self.HISTORY_PROMPTS.get(self.language, self.HISTORY_PROMPTS["en"])
+        template = HISTORY_PROMPTS.get(self.language, HISTORY_PROMPTS["en"])
         return PromptTemplate.from_template(template)
-
-    PROMPT_TEMPLATES = {
-        "en": """You are acting as my personal assistant and will respond
-            **as if you were me**, using first person ("I", "my", etc.).
-            Add some personality to your answers using emojis and not so
-            formal language.
-
-            Today's date is {date}. Use it to interpret and respond with
-            time references.
-
-            You must strictly follow these rules:
-
-            1. Only use the information provided in the context below. 
-            2. If the information is **not available or insufficient**, respond with: 
-            **"I'm sorry, I do not know."**  
-            3. Do **not** make up or hallucinate information.  
-            4. If the question is **too private or personal**, respond with: 
-            **"Sorry, I can't answer that."**
-            5. Do not state as **future** anything dated before today.
-
-            ---  
-            Context:  
-            {context}  
-            ---  
-            Question:  
-            {input}  
-            ---  
-            Answer as me:
-            """,
-        "es": """Estás actuando como mi asistente personal y responderás
-            **como si fueras yo**, usando la primera persona ("yo", "mi", etc.).
-            Añade personalidad a tus respuestas usando emojis y un lenguaje 
-            menos formal.
-
-            La fecha de hoy es {date}. Úsala para interpretar y responder con
-            referencias temporales.
-
-            Debes seguir estrictamente estas reglas:
-
-            1. Solo utiliza la información proporcionada en el contexto a continuación.
-            2. Si la información **no está disponible o es insuficiente**, responde con:
-            **"Lo siento, no lo sé."**
-            3. No inventes ni alucines información.
-            4. Si la pregunta es **demasiado privada o personal**, responde con:
-            **"Lo siento, no puedo responder eso."**
-            5. No declares como **futuro** nada con fecha antes de hoy.
-
-            ---
-            Contexto:
-            {context}
-            ---
-            Pregunta:
-            {input}
-            ---
-            Responde como si fueras yo:
-            """,
-    }
 
     def build_prompt(self) -> PromptTemplate:
         """
@@ -176,65 +103,132 @@ class RAGPipeline:
         Returns:
             PromptTemplate: The main prompt template.
         """
-        template = self.PROMPT_TEMPLATES.get(self.language, self.PROMPT_TEMPLATES["en"])
+        template = PROMPT_TEMPLATES.get(self.language, PROMPT_TEMPLATES["en"])
         return PromptTemplate.from_template(template)
 
-    def _create_rag_chain(self) -> Runnable:
+    def _rewrite_question(self, state: GraphState) -> dict:
         """
-        Creates the context aware RAG chain for document retrieval and answer
-        generation.
+        Node that rewrites the user question with conversation history context.
         """
-        retriever = self.vectorstore.as_retriever(
-            search_type="similarity", search_kwargs={"k": 6}
-        )
+        question = state["question"]
+        messages = state["messages"]
 
+        if not messages:
+            return {"rewritten_question": question}
         history_prompt = self.build_history_prompt()
+        rewrite_chain = history_prompt | self.llm
+
+        response = rewrite_chain.invoke({"input": question, "chat_history": messages})
+
+        rewritten_question = response.content
+        logger.info("Question rewritten: %s", rewritten_question)
+
+        return {"rewritten_question": rewritten_question}
+
+    def _retrieve_documents(self, state: GraphState) -> dict:
+        """
+        Node that retrieves documents using the rewritten question.
+        """
+        rewritten_question = state["rewritten_question"]
+
+        documents = self.retriever.invoke(rewritten_question)
+        logger.info("Retrieved %d documents", len(documents))
+
+        return {"documents": documents}
+
+    def _final_answer(self, state: GraphState) -> dict:
+        """
+        Node that generates the final answer using retrieved documents.
+        """
+        question = state["rewritten_question"]
+        documents = state["documents"]
+        original_question = state["question"]
+        previous_messages = state["messages"]
+
+        context = "\n\n".join([doc.page_content for doc in documents])
 
         today = datetime.now().strftime("%Y-%m-%d")
         answer_prompt = self.build_prompt().partial(date=today)
 
-        history_aware_retriever = create_history_aware_retriever(
-            llm=self.llm, retriever=retriever, prompt=history_prompt
-        )
+        answer_chain = answer_prompt | self.llm
+        response = answer_chain.invoke({"input": question, "context": context})
 
-        question_answer_chain = create_stuff_documents_chain(
-            llm=self.llm, prompt=answer_prompt
-        )
+        answer = response.content
+        logger.info("Answer generated successfully")
 
-        return create_retrieval_chain(history_aware_retriever, question_answer_chain)
+        updated_messages = previous_messages.copy()
+        updated_messages.append(HumanMessage(content=original_question))
+        updated_messages.append(AIMessage(content=answer))
+
+        return {"answer": answer, "messages": updated_messages}
+
+    def _build_graph(self):
+        """
+        Builds the LangGraph state graph with separate nodes.
+        """
+        workflow = StateGraph(GraphState)
+
+        workflow.add_node("rewrite_question", self._rewrite_question)
+        workflow.add_node("retrieve_documents", self._retrieve_documents)
+        workflow.add_node("final_answer", self._final_answer)
+
+        workflow.add_edge(START, "rewrite_question")
+        workflow.add_edge("rewrite_question", "retrieve_documents")
+        workflow.add_edge("retrieve_documents", "final_answer")
+
+        memory = MemorySaver()
+
+        return workflow.compile(checkpointer=memory)
 
     def generate_answer(
         self,
         question: str,
-        chat_history: list[dict[str, str]],
+        thread_id: str,
     ) -> dict[str, Any]:
         """
         Generate an answer to a question using the RAG pipeline.
 
         Args:
             question: The question to answer
-            chat_history: The chat history
+            thread_id: The conversation ID
 
         Returns:
-            Dict containing the answer and source documents
+            Dict containing the answer, rewritten_question, and source documents
         """
-        history_str = ""
+        config = {"configurable": {"thread_id": thread_id}}
 
-        for message in chat_history:
-            prefix = "User" if message["role"] == "user" else "Assistant"
-            history_str += f"{prefix}: {message['content']}\n"
+        snapshot = self.graph.get_state(config)
+        previous_messages = []
 
-        result = self.rag_chain.invoke(
+        if snapshot and snapshot.values:
+            previous_messages = snapshot.values.get("messages", [])
+
+            logger.info(
+                "Loaded %d messages from conversation history",
+                len(previous_messages),
+            )
+
+        result = self.graph.invoke(
             {
-                "input": question,
-                "chat_history": history_str,
-            }
+                "question": question,
+                "rewritten_question": None,
+                "documents": [],
+                "answer": None,
+                "messages": previous_messages,
+            },
+            config=config,
         )
 
+        answer = result["answer"]
+        rewritten_question = result["rewritten_question"]
+        documents = result["documents"]
+
+        sources = [
+            {"content": doc.page_content, "metadata": doc.metadata} for doc in documents
+        ]
+
         return {
-            "answer": result["answer"].strip(),
-            "sources": [
-                {"content": doc.page_content, "metadata": doc.metadata}
-                for doc in result.get("context", [])
-            ],
+            "answer": answer,
+            "rewritten_question": rewritten_question,
+            "sources": sources,
         }
