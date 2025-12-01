@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -67,11 +67,6 @@ jobs:
           new_version = f"{major}.{minor}.{patch}"
           print(f"New version: {new_version}")
 
-          doc["project"]["version"] = new_version
-
-          with open(file_path, "w", encoding="utf-8") as f:
-              f.write(tomlkit.dumps(doc))
-
           # Write outputs for later steps
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
               f.write(f"current_version={current_version}\n")
@@ -93,21 +88,11 @@ jobs:
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
 
-      - name: Get last commit title
-        id: last-commit
-        run: |
-          title="$(git log -1 --pretty=%s)"
-          # escape for GitHub output
-          title="${title//'%'/'%25'}"
-          title="${title//$'\n'/'%0A'}"
-          title="${title//$'\r'/'%0D'}"
-          echo "title=$title" >> "$GITHUB_OUTPUT"
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.bump-version.outputs.new_version }}
-          name: v${{ steps.bump-version.outputs.new_version }} – ${{ steps.last-commit.outputs.title }}
+          name: v${{ steps.bump-version.outputs.new_version }} – ${{ github.event.head_commit.message }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -116,6 +101,6 @@ jobs:
         run: |
           echo "## Version Bump Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Previous Version:** ${{ steps.bump-version.outputs.current_version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **New Version:** ${{ steps.bump-version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag Created:** v${{ steps.bump-version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 📝 **Previous Version:** ${{ steps.bump-version.outputs.current_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ✨ **New Version:** ${{ steps.bump-version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 📌 **Tag Created:** v${{ steps.bump-version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
