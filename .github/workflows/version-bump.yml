@@ -84,29 +84,11 @@ jobs:
       - name: Export APP_VERSION
         run: echo "APP_VERSION=${{ steps.bump-version.outputs.new_version }}" >> $GITHUB_ENV
 
-      - name: Commit version bump
-        id: commit
+      - name: Create Git tag
         run: |
-          if git diff --quiet pyproject.toml; then
-            echo "No version changes detected"
-            echo "committed=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          git add pyproject.toml
-          git commit -m "🛠️ [bot] Bump version to ${{ steps.bump-version.outputs.new_version }} [skip ci]"
-
-          # Pull before pushing to avoid race conditions
-          git pull --rebase origin main
-          git push
-          echo "committed=true" >> $GITHUB_OUTPUT
-
-      - name: Create Git tag
-        if: steps.commit.outputs.committed == 'true'
-        run: |
           TAG="v${{ steps.bump-version.outputs.new_version }}"
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
@@ -122,7 +104,6 @@ jobs:
           echo "title=$title" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        if: steps.commit.outputs.committed == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.bump-version.outputs.new_version }}
@@ -132,7 +113,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Summary
-        if: steps.commit.outputs.committed == 'true'
         run: |
           echo "## Version Bump Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
