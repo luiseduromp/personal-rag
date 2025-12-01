@@ -1,10 +1,10 @@
 7# Personal RAG Application
 
 This is a multilingual Retrieval-Augmented Generation (RAG) system that serves as a personal AI assistant, capable of answering
-questions about my professional background, skills, and experience, in English and Spanish 🎉. It uses an LLM to process and 
+questions about my professional background, skills, and experience, in English and Spanish 🎉. It uses an LLM to process and
 generate responses based on documents that I have provided to the system.
 
-🔗 Try the application in [my portfolio](https://luiseduromp.com) 
+🔗 Try the application in [my portfolio](https://luiseduromp.com)
 
 ## 🌟 Features
 
@@ -36,12 +36,12 @@ generate responses based on documents that I have provided to the system.
 - `POST /generate` - Generate an answer to a question using the RAG pipeline
 - `POST /upload` - Add a new document to the knowledge base via URL
 
-***Note.*** The `/upload` endpoint currently supports only documents available via URL, such as a CDN. 
+***Note.*** The `/upload` endpoint currently supports only documents available via URL, such as a CDN.
 
 
 ## 🧪 Trying the app
 If you want to setup this application for your own use, follow the steps below.
-Keep in mind that this does not cover the prerequisite installation of Python, Poetry, the OpenAI API key creation or the 
+Keep in mind that this does not cover the prerequisite installation of Python, Poetry, the OpenAI API key creation or the
 remote directory setup (S3 bucket, CloudFront, Lambda setups)
 
 ### Prerequisites
@@ -52,9 +52,9 @@ remote directory setup (S3 bucket, CloudFront, Lambda setups)
 
 ### Document Loading
 The documents are loaded from two sources: the `app/docs` directory in the disk, and a remote directory in an AWS S3 bucket.
-The remote directory is optional. The app has been designed assuming the remote (bucket) directory is private, so the list 
+The remote directory is optional. The app has been designed assuming the remote (bucket) directory is private, so the list
 of available files are read using a Lambda function, and the files are served through a CloudFront CDN.
-Therefore, for the remote directory, there is an aditional setup to be done which is not covered here, and it requires the 
+Therefore, for the remote directory, there is an aditional setup to be done which is not covered here, and it requires the
 URL to trigger the Lambda function and the CDN URL.
 
 ### Setup
@@ -72,9 +72,9 @@ URL to trigger the Lambda function and the CDN URL.
 
 3. Set up environment variables:
    Create a `.env` file in the project root as the .env.example
-   
-   The `allowed_origins` is a comma separated list of origins that are allowed to access the API. It is used as protection to 
-   prevent API abuse. Leave as `*` to allow all origins.  
+
+   The `allowed_origins` is a comma separated list of origins that are allowed to access the API. It is used as protection to
+   prevent API abuse. Leave as `*` to allow all origins.
 
    The `secret key` can be generated using a random string generator.
 
