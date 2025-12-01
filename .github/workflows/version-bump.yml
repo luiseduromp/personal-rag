@@ -46,18 +46,18 @@ jobs:
           import tomlkit
 
           file_path = "pyproject.toml"
-          
+
           with open(file_path, "r", encoding="utf-8") as f:
               content = f.read()
-              
+
           doc = tomlkit.parse(content)
-          
+
           if "project" not in doc or "version" not in doc["project"]:
               sys.exit("ERROR: version not found in [project] table")
 
           current_version = doc["project"]["version"]
           print(f"Current version: {current_version}")
-          
+
           try:
               major, minor, patch = map(int, current_version.split("."))
           except ValueError:
@@ -68,7 +68,7 @@ jobs:
           print(f"New version: {new_version}")
 
           doc["project"]["version"] = new_version
-          
+
           with open(file_path, "w", encoding="utf-8") as f:
               f.write(tomlkit.dumps(doc))
 
@@ -98,7 +98,7 @@ jobs:
 
           git add pyproject.toml
           git commit -m "🛠️ [bot] Bump version to ${{ steps.bump-version.outputs.new_version }} [skip ci]"
-          
+
           # Pull before pushing to avoid race conditions
           git pull --rebase origin main
           git push
@@ -110,6 +110,26 @@ jobs:
           TAG="v${{ steps.bump-version.outputs.new_version }}"
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
+
+      - name: Get last commit title
+        id: last-commit
+        run: |
+          title="$(git log -1 --pretty=%s)"
+          # escape for GitHub output
+          title="${title//'%'/'%25'}"
+          title="${title//$'\n'/'%0A'}"
+          title="${title//$'\r'/'%0D'}"
+          echo "title=$title" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        if: steps.commit.outputs.committed == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.bump-version.outputs.new_version }}
+          name: v${{ steps.bump-version.outputs.new_version }} – ${{ steps.last-commit.outputs.title }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Summary
         if: steps.commit.outputs.committed == 'true'
