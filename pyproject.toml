@@ -1,6 +1,6 @@
 [project]
 name = "luiseduromp-rag"
-version = "0.2.2"
+version = "0.2.3"
 description = "A personal RAG (Retrieval-Augmented Generation) application to answer questions about my personal profile"
 authors = [{ name = "Luis Romero", email = "luiseduromp@hotmail.com" }]
 readme = "README.md"
